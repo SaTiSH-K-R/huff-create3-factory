@@ -62,7 +62,7 @@
 }
 
 #define macro DEPLOY_PROXY_FACTORY() = takes (0) returns (0) {
-    [PROXY_CREATE_FACTORY_BYTECODE]       // [bytecode]
+    [PROXY_CREATE_FACTORY_BYTECODE]     // [bytecode]
     0x0 mstore                          // []
     0x4 calldataload                    // [salt]
     0x10 0x10 0x00                      // [0, 16, 16, salt]
@@ -82,14 +82,15 @@
 
 #define macro DEPLOY_CONTRACT() = takes (1) returns (0) {
                                         // [proxy_addr]
-    0x0 0x0                             // [ret_offset, ret_size]
-    0x24 calldataload                   // [creation_code_len, ret_offset, ret_size]
-    dup1 0x44 0x0 calldatacopy          // [creation_code_len, ret_offset, ret_size]
-    0x0                                 // [creation_code_offset, creation_code_len, ret_offset, ret_size]
-    callvalue                           // [value, creation_code_offset, creation_code_len, ret_offset, ret_size]
-    address                             // [address, value, creation_code_offset, creation_code_len, ret_offset, ret_size]
-    gas                                 // [gas, address, value, creation_code_offset, creation_code_len, ret_offset, ret_size]
-    call                                // [bool:success]
+    0x0 0x0                             // [ret_offset, ret_size, proxy_addr]
+    0x24 calldataload                   // [creation_code_len, ret_offset, ret_size, proxy_addr]
+    dup1 0x44 0x0 calldatacopy          // [creation_code_len, ret_offset, ret_size, proxy_addr]
+    0x0                                 // [creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    callvalue                           // [value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    dup6                                // [address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    gas                                 // [gas, address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    call                                // [bool:success, proxy_addr]
+    swap1 pop                           // [bool:success]
     CHECK_CONTRACT_DEPLOYMENT()         // []
 }
 
@@ -100,7 +101,7 @@
     0xff 0x0 mstore                     // [salt]
     address 0x20 mstore                 // [salt]
     0x40 mstore                         // []
-    [PROXY_CREATE_FACTORY_BYTECODE_HASH]  // [bytecode_hash]
+    [PROXY_CREATE_FACTORY_BYTECODE_HASH]// [bytecode_hash]
     0x60 mstore                         // []
     0x80 0x0 sha3                       // [hash]
     0x0000000000000000000000001111111111111111111111111111111111111111
