@@ -83,35 +83,35 @@
 #define macro DEPLOY_CONTRACT() = takes (1) returns (0) {
                                         // [proxy_addr]
     0x0 0x0                             // [ret_offset, ret_size, proxy_addr]
-    0x24 calldataload                   // [creation_code_len, ret_offset, ret_size, proxy_addr]
-    dup1 0x44 0x0 calldatacopy          // [creation_code_len, ret_offset, ret_size, proxy_addr]
+    0x44 calldataload                   // [creation_code_len, ret_offset, ret_size, proxy_addr]
+    dup1 0x64 0x0 calldatacopy          // [creation_code_len, ret_offset, ret_size, proxy_addr]
     0x0                                 // [creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     callvalue                           // [value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     dup6                                // [address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     gas                                 // [gas, address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     call                                // [bool:success, proxy_addr]
-    swap1 pop                           // [bool:success]
     CHECK_CONTRACT_DEPLOYMENT()         // []
+    pop                                 // [bool:success]
 }
 
-#define macro GET_ADDRESS() = takes (0) returns (1) {
-    0x4 calldataload                    // [salt]
-    dup1                                // [salt]
+#define macro GET_ADDRESS() = takes (1) returns (1) {
+                                        // [salt]
+    dup1                                // [salt, salt]
     CHECK_SALT()                        // [salt]
-    0xff 0x0 mstore                     // [salt]
-    address 0x20 mstore                 // [salt]
-    0x40 mstore                         // []
+    0xff 0xf8 shl 0x0 mstore            // [salt]
+    address 0x60 shl 0x1 mstore         // [salt]
+    0x15 mstore                         // []
     [PROXY_CREATE_FACTORY_BYTECODE_HASH]// [bytecode_hash]
-    0x60 mstore                         // []
-    0x80 0x0 sha3                       // [hash]
-    0x0000000000000000000000001111111111111111111111111111111111111111
+    0x35 mstore                         // []
+    0x55 0x0 sha3                       // [hash]
+    0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff
                                         // [0x00....111, hash]
     and                                 // [addr]
-    0x20 mstore                         // []
-    0xd694 0x0 mstore                   // []
-    0x1 0x40 mstore                     // []
-    0x60 0x0 sha3                       // [hash]
-    0x0000000000000000000000001111111111111111111111111111111111111111
+    0xd694 0xf0 shl 0x0 mstore          // [addr]
+    0x60 shl 0x2 mstore                 // []
+    0x01 0xf8 shl 0x16 mstore           // []
+    0x17 0x0 sha3                       // [hash]
+    0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff
                                         // [0x00....111, hash]
     and                                 // [addr]
 }
@@ -119,6 +119,7 @@
 /* Function macros */
 
 #define macro DEPLOY() = takes (0) returns (0) {
+    0x4 calldataload                    // [salt]
     GET_ADDRESS()                       // [addr]
     extcodesize                         // [target_code_size]
     iszero continue_deploy jumpi        // []
@@ -132,6 +133,7 @@
 }
 
 #define macro GET_DETERMINISTIC_ADDRESS() = takes (0) returns(0) {
+    0x4 calldataload                    // [salt]
     GET_ADDRESS()                       // [addr]
     0x0 mstore                          // []
     0x20 returndatasize                 // [0, 32]
