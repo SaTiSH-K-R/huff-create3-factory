@@ -1,9 +1,15 @@
-/// @author SaTiSH-K-R (https://github.com/SaTiSH-K-R/huff-create3-factory)
-/// @author Modified from Solady (https://github.com/Vectorized/solady) and rewritten in Huff
+// SPDX-License-Indentifier: MIT
 
-/* Interface */
-#define function deploy(bytes32,bytes) payable returns () 
-#define function getDeterministicAddress(bytes32) view returns (address)
+/// @author SaTiSH-K-R (https://github.com/SaTiSH-K-R/huff-create3-factory)
+/// @author Modified from https://github.com/Vectorized/solady/blob/50cbe1909e773b7e4ba76049c75a203e626d55ba/src/utils/CREATE3.sol
+/// @author Modified from SKYBITDev3 (https://github.com/SKYBITDev3/SKYBIT-Keyless-Deployment/blob/main/contracts/SKYBITCREATE3FactoryLite.yul) and written in huff.
+/// @notice A factory contract which uses "create3" method to deploy contracts to an address which doesn't effect by the bytecode of the contract.
+/// @notice This factory is used to deploy the contracts to the same address in different blockchains.
+/// @notice In order to achieve this specific usecase, this contract must be deployed using "Keyless Deployment".
+/// @notice This contract can be called with any function name(eg: deploy()) with salt and creation code as arguments.
+
+// Interface
+#define function deploy(bytes32 salt, bytes creationCode) payable returns (address contractAddress)
 
 /**
     Proxy Create Factory contract in bytecode form
@@ -19,138 +25,94 @@
      * 3d          | RETURNDATASIZE   | 0 cds        | [0..cds): calldata |
      * 34          | CALLVALUE        | value 0 cds  | [0..cds): calldata |
      * f0          | CREATE           | newContract  | [0..cds): calldata |
+     * 3d          | RETURNDATASIZE   | 0 newContract| [0..cds): calldata |
+     * 52          | MSTORE           |              | [0..32): contract  |
+     * 60 0x20     | PUSH1 0x20       | 0x20         | [0..32): contract  |
+     * 3d          | RETURNDATASIZE   | 0 0x20       | [0..32): contract  |
+     * f3          | RETURN           |              | [0..32): contract  |
      * -------------------------------------------------------------------|
      * Opcode      | Mnemonic         | Stack        | Memory             |
      * -------------------------------------------------------------------|
-     * 67 bytecode | PUSH8 bytecode   | bytecode     |                    |
+     * 6d bytecode | PUSH14 bytecode  | bytecode     |                    |
      * 3d          | RETURNDATASIZE   | 0 bytecode   |                    |
-     * 52          | MSTORE           |              | [0..8): bytecode   |
-     * 60 0x08     | PUSH1 0x08       | 0x08         | [0..8): bytecode   |
-     * 60 0x18     | PUSH1 0x18       | 0x18 0x08    | [0..8): bytecode   |
-     * f3          | RETURN           |              | [0..8): bytecode   |
+     * 52          | MSTORE           |              | [18..32): bytecode |
+     * 60 0x0e     | PUSH1 0x0e       | 0x0e         | [18..32): bytecode |
+     * 60 0x12     | PUSH1 0x12       | 0x12 0x0e    | [18..32): bytecode |
+     * f3          | RETURN           |              | [18..32): bytecode |
      * -------------------------------------------------------------------+
      */
 
 /* Constants */
-#define constant PROXY_CREATE_FACTORY_BYTECODE = 0x67363d3d37363d34f03d5260086018f3
-#define constant PROXY_CREATE_FACTORY_BYTECODE_HASH = 0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f
+#define constant PROXY_FACTORY_BYTECODE = 0x6d363d3d37363d34f03d5260203df33d52600e6012f3
 
-/* Errors */
-#define error TargetAlreadyExists()
-#define error ErrorProxyDeployment()
-#define error ErrorContractDeployment()
-#define error InvalidSalt()
+/* Utils */
+// Can be used to push zero when return buffer is empty
+#define macro RZERO() = takes(0) returns(0) {
+    returndatasize
+}
 
 /* Macros */
 
-#define macro CHECK_SALT() = takes (1) returns (0) {
-                                        // [salt]
-    valid_salt jumpi                    // []
-    __ERROR(InvalidSalt)                // [error-sig]
-    0x0 mstore                          // []
-    0x20 0x0 return
-    valid_salt:                         // []
-}
-
+// Check if the proxy contract deployed and reverts with 1 otherwise.
 #define macro CHECK_PROXY_DEPLOYMENT() = takes (1) returns (0) {
                                         // [proxy_addr]
     proxy_deployed jumpi                // []
-    __FUNC_SIG(ErrorProxyDeployment)    // [error_sig]
-    0x0 mstore                          // []
-    0x4 0x0 revert                      // []
+    0x1 RZERO() mstore                  // []
+    0x20 RZERO() revert                 // []   Reverting with 1 denotes error at proxy deployment
     proxy_deployed:                     // []
 }
 
-#define macro DEPLOY_PROXY_FACTORY() = takes (0) returns (0) {
-    [PROXY_CREATE_FACTORY_BYTECODE]     // [bytecode]
-    0x0 mstore                          // []
+// Check if the target contract deployed and reverts with 2 otherwise.
+#define macro CHECK_CONTRACT_DEPLOYMENT() = takes (1) returns (0) {
+                                        // [bool:success/fail]
+    contract_deployed jumpi             // []
+    0x2 0x0 mstore                      // []
+    0x20 0x0 revert                     // []   Reverting with 2 denotes error at contract deployment
+    contract_deployed:                  // []
+}
+
+#define macro DEPLOY_PROXY_FACTORY() = takes (0) returns (1) {
+    // create2(value, code_offset, code_size, salt)
+
+    // -> store proxy bytecode in memory at 0
+    [PROXY_FACTORY_BYTECODE]            // [bytecode]
+    RZERO() mstore                      // []
+
+    // -> sha3(offset_mem, size)
+    // -> store caller in memory at 32 and salt at 64
+    caller 0x20 mstore                  // []
     0x4 calldataload                    // [salt]
-    0x10 0x10 0x00                      // [0, 16, 16, salt]
+    0x40 mstore                         // []
+    0x60 0x2c sha3                      // [salt]            Updated salt with keccak256(caller(),salt) to protect from front-running
+
+    0x16 0x0a RZERO()                   // [0, 10, 22, salt]
     create2                             // [proxy_addr]
+
     dup1                                // [proxy_addr, proxy_addr]
     CHECK_PROXY_DEPLOYMENT()            // [proxy_addr]
 }
 
-#define macro CHECK_CONTRACT_DEPLOYMENT() = takes (1) returns (0) {
-                                        // [bool:success/fail]
-    contract_deployed jumpi             // []
-    __FUNC_SIG(ErrorContractDeployment) // [error_sig]
-    0x0 mstore                          // []
-    0x4 0x0 revert                      // []
-    contract_deployed:                  // []
-}
+#define macro DEPLOY_CONTRACT() = takes (1) returns (1) {
+    // call(gas, address, value, argsOffset, argsSize, returnOffset, returnSize)
 
-#define macro DEPLOY_CONTRACT() = takes (1) returns (0) {
                                         // [proxy_addr]
-    0x0 0x0                             // [ret_offset, ret_size, proxy_addr]
+    0x20 RZERO()                        // [ret_offset, ret_size, proxy_addr]
     0x44 calldataload                   // [creation_code_len, ret_offset, ret_size, proxy_addr]
-    dup1 0x64 0x0 calldatacopy          // [creation_code_len, ret_offset, ret_size, proxy_addr]
-    0x0                                 // [creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    dup1 0x64 RZERO() calldatacopy      // [creation_code_len, ret_offset, ret_size, proxy_addr]
+    RZERO()                             // [creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     callvalue                           // [value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
-    dup6                                // [address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
-    gas                                 // [gas, address, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    dup6                                // [proxy_addr, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
+    gas                                 // [gas, proxy_addr, value, creation_code_offset, creation_code_len, ret_offset, ret_size, proxy_addr]
     call                                // [bool:success, proxy_addr]
-    CHECK_CONTRACT_DEPLOYMENT()         // []
-    pop                                 // [bool:success]
+    CHECK_CONTRACT_DEPLOYMENT()         // [proxy_addr]
 }
-
-#define macro GET_ADDRESS() = takes (1) returns (1) {
-                                        // [salt]
-    dup1                                // [salt, salt]
-    CHECK_SALT()                        // [salt]
-    0xff 0xf8 shl 0x0 mstore            // [salt]
-    address 0x60 shl 0x1 mstore         // [salt]
-    0x15 mstore                         // []
-    [PROXY_CREATE_FACTORY_BYTECODE_HASH]// [bytecode_hash]
-    0x35 mstore                         // []
-    0x55 0x0 sha3                       // [hash]
-    0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff
-                                        // [0x00....111, hash]
-    and                                 // [addr]
-    0xd694 0xf0 shl 0x0 mstore          // [addr]
-    0x60 shl 0x2 mstore                 // []
-    0x01 0xf8 shl 0x16 mstore           // []
-    0x17 0x0 sha3                       // [hash]
-    0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff
-                                        // [0x00....111, hash]
-    and                                 // [addr]
-}
-
-/* Function macros */
 
 #define macro DEPLOY() = takes (0) returns (0) {
-    0x4 calldataload                    // [salt]
-    GET_ADDRESS()                       // [addr]
-    extcodesize                         // [target_code_size]
-    iszero continue_deploy jumpi        // []
-        __ERROR(TargetAlreadyExists)    // [error_sig]
-        0x0 mstore                      // []
-        0x4 0x0 revert                  // []
-    continue_deploy:
     DEPLOY_PROXY_FACTORY()              // [proxy_addr]
-    DEPLOY_CONTRACT()                   // []
-    0x0 0x0 return
-}
-
-#define macro GET_DETERMINISTIC_ADDRESS() = takes (0) returns(0) {
-    0x4 calldataload                    // [salt]
-    GET_ADDRESS()                       // [addr]
-    0x0 mstore                          // []
-    0x20 returndatasize                 // [0, 32]
-    return                              // []
+    DEPLOY_CONTRACT()                   // [proxy_addr]
+    0x20 0x0 return
 }
 
 #define macro MAIN() = takes(0) returns(0) {
-    // Identify which function is being called.
-    0x00 calldataload 0xE0 shr
-    dup1 __FUNC_SIG(deploy) eq deployMacro jumpi
-    dup1 __FUNC_SIG(getDeterministicAddress) eq getAddressMacro jumpi
-
-    0x00 0x00 revert
-
-    /* Dispatchers */
-    deployMacro:
-        DEPLOY()
-    getAddressMacro:
-        GET_DETERMINISTIC_ADDRESS()
+    DEPLOY()
 }

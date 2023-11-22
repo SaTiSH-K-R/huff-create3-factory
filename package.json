@@ -1,0 +1,19 @@
+{
+  "name": "huff-create3-factory",
+  "version": "1.0.0",
+  "description": "<img align=\"right\" width=\"150\" height=\"150\" top=\"100\" src=\"./assets/blueprint.png\">",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ethers": "^6.8.0"
+  }
+}
