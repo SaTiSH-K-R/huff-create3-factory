@@ -17,9 +17,6 @@ const provider = ethers.getDefaultProvider(rpcUrl)
 
 async function main() {
 
-    // const wallet = new ethers.Wallet("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", provider)
-    // await wallet.sendTransaction({to: signerAddress, value: gasLimit * gasPrice})
-
     if(await provider.getCode(expectedContractAddress) != '0x') {
         console.log("Contract already exists at address: ", expectedContractAddress)
         return
